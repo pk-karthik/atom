@@ -55,4 +55,8 @@ export default class TextEditorRegistry {
     this.editors.forEach(callback)
     return this.emitter.on("did-add-editor", callback)
   }
+
+  maintainGrammar (editor) {
+    
+  }
 }

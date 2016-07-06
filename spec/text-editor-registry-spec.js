@@ -1,18 +1,20 @@
 /** @babel */
 
+import {beforeEach} from '../spec/async-spec-helpers'
+import {TextBuffer} from 'atom'
 import TextEditorRegistry from '../src/text-editor-registry'
 import TextEditor from '../src/text-editor'
 
 describe('TextEditorRegistry', function () {
-  let registry, editor
+  let registry, grammarRegistry
 
-  beforeEach(function () {
-    registry = new TextEditorRegistry()
+  beforeEach(async function () {
+    registry = new TextEditorRegistry(atom.grammars)
   })
 
   describe('.add', function () {
     it('adds an editor to the list of registered editors', function () {
-      editor = {}
+      const editor = {}
       registry.add(editor)
       expect(editor.registered).toBe(true)
       expect(registry.editors.size).toBe(1)
@@ -20,7 +22,7 @@ describe('TextEditorRegistry', function () {
     })
 
     it('returns a Disposable that can unregister the editor', function () {
-      editor = {}
+      const editor = {}
       const disposable = registry.add(editor)
       expect(registry.editors.size).toBe(1)
       disposable.dispose()
@@ -48,10 +50,34 @@ describe('TextEditorRegistry', function () {
     })
   })
 
-  describe('.maintainGrammar', function () {
-    ffit('assigns a grammar to the editor based on its path', function () {
-      const editor = new TextEditor({config: atom.config, clipboard: atom.clipboard})
+  ffdescribe('.maintainGrammar', function () {
+    let editor
+
+    beforeEach(function () {
+      editor = new TextEditor({
+        buffer: new TextBuffer({filePath: 'test.js'}),
+        config: atom.config,
+        clipboard: atom.clipboard,
+        grammarRegistry: atom.grammars
+      })
+    });
+
+    it('assigns a grammar to the editor based on its path', async function () {
+      await atom.packages.activatePackage('language-javascript')
+      await atom.packages.activatePackage('language-c')
+
       registry.maintainGrammar(editor)
+      expect(editor.getGrammar().name).toBe('JavaScript')
+
+      editor.getBuffer().setPath('test.c')
+      expect(editor.getGrammar().name).toBe('C')
     })
+
+    it('updates the editor\'s grammar when a new grammar is added', async function () {
+      expect(editor.getGrammar().name).toBe('Null Grammar')
+      registry.maintainGrammar(editor)
+      await atom.packages.activatePackage('language-javascript')
+      expect(editor.getGrammar().name).toBe('JavaScript')
+    });
   })
 })
