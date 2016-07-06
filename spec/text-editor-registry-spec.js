@@ -1,6 +1,7 @@
 /** @babel */
 
 import TextEditorRegistry from '../src/text-editor-registry'
+import TextEditor from '../src/text-editor'
 
 describe('TextEditorRegistry', function () {
   let registry, editor
@@ -44,6 +45,13 @@ describe('TextEditorRegistry', function () {
 
       registry.add(editor3)
       expect(spy.calls.length).toBe(2)
+    })
+  })
+
+  describe('.maintainGrammar', function () {
+    ffit('assigns a grammar to the editor based on its path', function () {
+      const editor = new TextEditor({config: atom.config, clipboard: atom.clipboard})
+      registry.maintainGrammar(editor)
     })
   })
 })
