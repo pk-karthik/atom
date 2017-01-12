@@ -1,5 +1,4 @@
 path = require 'path'
-url = require 'url'
 
 _ = require 'underscore-plus'
 fs = require 'fs-plus'
@@ -8,8 +7,6 @@ TextBuffer = require 'text-buffer'
 
 DefaultDirectoryProvider = require './default-directory-provider'
 Model = require './model'
-TextEditor = require './text-editor'
-Task = require './task'
 GitRepositoryProvider = require './git-repository-provider'
 
 # Extended: Represents a project that's opened in Atom.
@@ -56,7 +53,6 @@ class Project extends Model
 
   deserialize: (state) ->
     state.paths = [state.path] if state.path? # backward compatibility
-    state.paths = state.paths.filter (directoryPath) -> fs.isDirectorySync(directoryPath)
 
     @buffers = _.compact state.buffers.map (bufferState) ->
       # Check that buffer's file path is accessible
@@ -74,7 +70,15 @@ class Project extends Model
   serialize: (options={}) ->
     deserializer: 'Project'
     paths: @getPaths()
-    buffers: _.compact(@buffers.map (buffer) -> buffer.serialize({markerLayers: options.isUnloading is true}) if buffer.isRetained())
+    buffers: _.compact(@buffers.map (buffer) ->
+      if buffer.isRetained()
+        state = buffer.serialize({markerLayers: options.isUnloading is true})
+        # Skip saving large buffer text unless unloading to avoid blocking main thread
+        if not options.isUnloading and state.text.length > 2 * 1024 * 1024
+          delete state.text
+          delete state.digestWhenLastPersisted
+        state
+    )
 
   ###
   Section: Event Subscription
@@ -89,8 +93,26 @@ class Project extends Model
   onDidChangePaths: (callback) ->
     @emitter.on 'did-change-paths', callback
 
+  # Public: Invoke the given callback when a text buffer is added to the
+  # project.
+  #
+  # * `callback` {Function} to be called when a text buffer is added.
+  #   * `buffer` A {TextBuffer} item.
+  #
+  # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
   onDidAddBuffer: (callback) ->
     @emitter.on 'did-add-buffer', callback
+
+  # Public: Invoke the given callback with all current and future text
+  # buffers in the project.
+  #
+  # * `callback` {Function} to be called with current and future text buffers.
+  #   * `buffer` A {TextBuffer} item.
+  #
+  # Returns a {Disposable} on which `.dispose()` can be called to unsubscribe.
+  observeBuffers: (callback) ->
+    callback(buffer) for buffer in @getBuffers()
+    @onDidAddBuffer callback
 
   ###
   Section: Accessing the git repository
@@ -163,10 +185,9 @@ class Project extends Model
       break if directory = provider.directoryForURISync?(projectPath)
     directory ?= @defaultDirectoryProvider.directoryForURISync(projectPath)
 
-    directoryExists = directory.existsSync()
-    for rootDirectory in @getDirectories()
-      return if rootDirectory.getPath() is directory.getPath()
-      return if not directoryExists and rootDirectory.contains(directory.getPath())
+    return unless directory.existsSync()
+    for existingDirectory in @getDirectories()
+      return if existingDirectory.getPath() is directory.getPath()
 
     @rootDirectories.push(directory)
 
@@ -212,11 +233,11 @@ class Project extends Model
       uri
     else
       if fs.isAbsolute(uri)
-        path.normalize(fs.absolute(uri))
+        path.normalize(fs.resolveHome(uri))
 
       # TODO: what should we do here when there are multiple directories?
       else if projectPath = @getPaths()[0]
-        path.normalize(fs.absolute(path.join(projectPath, uri)))
+        path.normalize(fs.resolveHome(path.join(projectPath, uri)))
       else
         undefined
 
